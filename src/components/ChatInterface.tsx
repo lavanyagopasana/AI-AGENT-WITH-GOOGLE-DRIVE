@@ -94,8 +94,9 @@ const ChatInterface: React.FC = () => {
       ).join('\n\n---\n\n');
       const aiResponse = await llmService.generateResponse(inputValue, context);
 
-      // Use the relevant chunks directly as sources
-      const sources = relevantChunks;
+      // Use the relevant chunks directly as sources, but deduplicate by file_name
+      const uniqueSources = Array.from(new Map(relevantChunks.map(chunk => [chunk.file_name, chunk])).values());
+      const sources = uniqueSources;
 
       const aiMessage: ChatMessage = {
         id: (Date.now() + 1).toString(),
