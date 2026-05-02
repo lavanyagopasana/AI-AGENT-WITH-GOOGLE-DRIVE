@@ -46,7 +46,7 @@ const Header: React.FC = () => {
                 
                 const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
                   `client_id=${clientId}&` +
-                  `redirect_uri=${encodeURIComponent('http://localhost:5173')}&` +
+                  `redirect_uri=${encodeURIComponent(window.location.origin)}&` +
                   `response_type=token&` +
                   `scope=${encodeURIComponent(scopes)}&` +
                   `include_granted_scopes=true`;

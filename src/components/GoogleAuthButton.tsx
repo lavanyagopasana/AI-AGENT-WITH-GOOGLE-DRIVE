@@ -7,7 +7,7 @@ const GoogleAuthButton: React.FC = () => {
   const handleGoogleAuth = () => {
     // Build OAuth URL with proper Drive scopes
     const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-    const redirectUri = 'http://localhost:5173';
+    const redirectUri = window.location.origin;
     const scopes = [
       'https://www.googleapis.com/auth/drive.readonly',
       'https://www.googleapis.com/auth/drive.metadata.readonly',
