@@ -26,9 +26,9 @@ export class EmbeddingService {
 
     for (let attempt = 1; attempt <= retries; attempt++) {
       try {
-        // Use Vite proxy to bypass CORS
+        // HuggingFace Inference API supports CORS natively
         const response = await fetch(
-          '/hf-api/hf-inference/models/sentence-transformers/all-MiniLM-L6-v2/pipeline/feature-extraction',
+          'https://router.huggingface.co/hf-inference/models/sentence-transformers/all-MiniLM-L6-v2/pipeline/feature-extraction',
           {
             method: 'POST',
             headers: {

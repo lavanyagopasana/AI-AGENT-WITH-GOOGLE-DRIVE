@@ -45,8 +45,8 @@ Now answer the user's question based on the provided context.`;
   }
 
   private async generateResponseWithGroq(systemPrompt: string, query: string): Promise<string> {
-    // Use Vite proxy to bypass CORS
-    const response = await fetch('/groq-api/openai/v1/chat/completions', {
+    // Groq API supports CORS natively
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${this.apiKey}`,
