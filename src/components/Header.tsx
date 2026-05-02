@@ -1,30 +1,10 @@
 import React from 'react';
-import { GoogleLogin } from '@react-oauth/google';
 import { useAuth } from '../contexts/AuthContext';
-import { LogOut, FolderOpen, Bot } from 'lucide-react';
+import { LogOut, Bot } from 'lucide-react';
 
 const Header: React.FC = () => {
   const { isAuthenticated, user, logout } = useAuth();
 
-  const handleGoogleSuccess = (credentialResponse: any) => {
-    const token = credentialResponse.credential;
-    localStorage.setItem('google_access_token', token);
-    
-    // Decode JWT to get user info
-    const payload = JSON.parse(atob(token.split('.')[1]));
-    const userInfo = {
-      name: payload.name,
-      email: payload.email,
-      picture: payload.picture,
-    };
-    
-    localStorage.setItem('google_user', JSON.stringify(userInfo));
-    window.location.reload();
-  };
-
-  const handleGoogleError = () => {
-    console.error('Google login failed');
-  };
 
   return (
     <header className="bg-white border-b border-gray-200 px-6 py-4">

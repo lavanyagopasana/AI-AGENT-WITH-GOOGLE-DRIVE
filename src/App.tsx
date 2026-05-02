@@ -1,4 +1,4 @@
-import React from 'react';
+// React is globally available in modern Vite setups
 import { GoogleOAuthProvider } from '@react-oauth/google';
 import Layout from './components/Layout';
 import { AuthProvider } from './contexts/AuthContext';

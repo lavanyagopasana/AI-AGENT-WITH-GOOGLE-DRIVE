@@ -2,7 +2,7 @@ import React from 'react';
 import { useAuth } from '../contexts/AuthContext';
 
 const GoogleAuthButton: React.FC = () => {
-  const { login } = useAuth();
+  const {} = useAuth();
 
   const handleGoogleAuth = () => {
     // Build OAuth URL with proper Drive scopes

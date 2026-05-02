@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useDrive } from '../contexts/DriveContext';
-import { MessageCircle, Send, Bot, User, FileText, Folder, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
+import { Send, Bot, User, FileText, Folder, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
 import { ChatMessage } from '../types';
 import { SupabaseService } from '../services/supabaseService';
 import { EmbeddingService } from '../services/embeddingService';
