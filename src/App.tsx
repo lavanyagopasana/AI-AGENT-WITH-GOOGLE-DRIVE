@@ -3,6 +3,7 @@ import { GoogleOAuthProvider } from '@react-oauth/google';
 import Layout from './components/Layout';
 import { AuthProvider } from './contexts/AuthContext';
 import { DriveProvider } from './contexts/DriveContext';
+import { ThemeProvider } from './contexts/ThemeContext';
 
 const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
@@ -19,13 +20,15 @@ function App() {
   }
 
   return (
-    <GoogleOAuthProvider clientId={googleClientId}>
-      <AuthProvider>
-        <DriveProvider>
-          <Layout />
-        </DriveProvider>
-      </AuthProvider>
-    </GoogleOAuthProvider>
+    <ThemeProvider>
+      <GoogleOAuthProvider clientId={googleClientId}>
+        <AuthProvider>
+          <DriveProvider>
+            <Layout />
+          </DriveProvider>
+        </AuthProvider>
+      </GoogleOAuthProvider>
+    </ThemeProvider>
   );
 }
 
