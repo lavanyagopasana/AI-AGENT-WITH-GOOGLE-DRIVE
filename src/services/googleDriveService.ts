@@ -45,7 +45,8 @@ export class GoogleDriveService {
   }
 
   async listFiles(folderId: string): Promise<GoogleDriveFile[]> {
-    const query = `'${folderId}' in parents and trashed=false and (mimeType='application/pdf' or mimeType contains 'text/')`;
+    // Exclude folders and Google Workspace formats (Docs/Sheets/Slides) that can't be read as text
+    const query = `'${folderId}' in parents and trashed=false and mimeType != 'application/vnd.google-apps.folder' and mimeType != 'application/vnd.google-apps.spreadsheet' and mimeType != 'application/vnd.google-apps.presentation' and mimeType != 'application/vnd.google-apps.form'`;
     const url = `${API_BASE_URL}/files?q=${encodeURIComponent(query)}&fields=files(id,name,mimeType,size,modifiedTime,webViewLink,webContentLink)`;
     
     const response = await this.makeRequest(url);
@@ -86,8 +87,17 @@ export class GoogleDriveService {
 
       const arrayBuffer = await response.arrayBuffer();
       return this.arrayBufferToBase64(arrayBuffer);
-    } else if (mimeType.startsWith('text/')) {
-      // Download text file directly
+    } else if (mimeType === 'application/vnd.google-apps.document') {
+      // Export Google Docs as plain text
+      const exportUrl = `${API_BASE_URL}/files/${fileId}/export?mimeType=text/plain`;
+      const response = await fetch(exportUrl, {
+        headers: { 'Authorization': `Bearer ${this.accessToken}` },
+      });
+      if (!response.ok) throw new Error(`Failed to export Google Doc: ${response.statusText}`);
+      return await response.text();
+    } else {
+      // For ALL other file types: text/*, application/octet-stream, application/json, etc.
+      // Covers .py, .md, .txt, .gitignore, requirements.txt, config.py, setup.py, .json, .yaml, etc.
       const url = `${API_BASE_URL}/files/${fileId}?alt=media`;
       const response = await fetch(url, {
         headers: {
@@ -96,12 +106,10 @@ export class GoogleDriveService {
       });
 
       if (!response.ok) {
-        throw new Error(`Failed to download text file: ${response.statusText}`);
+        throw new Error(`Failed to download file: ${response.statusText}`);
       }
 
       return await response.text();
-    } else {
-      throw new Error(`Unsupported file type: ${mimeType}`);
     }
   }
 

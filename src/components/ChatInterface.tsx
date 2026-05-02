@@ -9,7 +9,8 @@ import { LLMService } from '../services/llmService';
 
 const ChatInterface: React.FC = () => {
   const { isAuthenticated } = useAuth();
-  const { selectedFolder } = useDrive();
+  const { selectedFolder, files } = useDrive();
+  const fileNames: string[] = files ? files.map((f: any) => f.name) : [];
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -24,6 +25,11 @@ const ChatInterface: React.FC = () => {
     scrollToBottom();
   }, [messages]);
 
+  // Reset messages when folder changes
+  useEffect(() => {
+    setMessages([]);
+  }, [selectedFolder?.id]);
+
   const toggleErrorDetails = (messageId: string) => {
     setExpandedErrors(prev => {
       const next = new Set(prev);
@@ -37,8 +43,8 @@ const ChatInterface: React.FC = () => {
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault(); // Prevent page reload
-    
+    e.preventDefault();
+
     if (!inputValue.trim() || isLoading || !selectedFolder) return;
 
     const userMessage: ChatMessage = {
@@ -54,18 +60,24 @@ const ChatInterface: React.FC = () => {
 
     try {
       console.log('Starting RAG pipeline for query:', inputValue);
-      
+
       // Initialize services
       const supabaseService = new SupabaseService();
       const embeddingService = new EmbeddingService();
       const llmService = new LLMService();
 
+      // folderMetadata uses fileNames computed at component scope from useDrive()
+      const folderMetadata = {
+        folderName: selectedFolder.name,
+        fileNames,
+      };
+
       // Step 1: Generate embedding for user query
       console.log('Step 1: Generating embedding for query...');
       const queryEmbedding = await embeddingService.generateEmbedding(inputValue);
-      console.log('Embedding generated successfully, dimension:', queryEmbedding.length);
+      console.log('Embedding generated, dimension:', queryEmbedding.length);
 
-      // Step 2: Search for relevant documents in Supabase
+      // Step 2: Search for relevant document chunks in Supabase
       console.log('Step 2: Searching documents in folder:', selectedFolder.id);
       const relevantChunks = await supabaseService.searchDocuments(
         queryEmbedding,
@@ -75,7 +87,6 @@ const ChatInterface: React.FC = () => {
       console.log('Found relevant chunks:', relevantChunks.length);
 
       if (relevantChunks.length === 0) {
-        console.log('No relevant chunks found. Documents may not be processed yet.');
         const aiMessage: ChatMessage = {
           id: (Date.now() + 1).toString(),
           content: "I cannot find any processed documents in this folder. The documents may still be processing — please wait a moment and try again. If this persists, try re-selecting the folder from the sidebar to trigger document indexing.",
@@ -87,37 +98,36 @@ const ChatInterface: React.FC = () => {
         return;
       }
 
-      // Step 3: Generate response using LLM with context
+      // Step 3: Generate response using LLM with context + folder metadata
       console.log('Step 3: Generating LLM response...');
-      const context = relevantChunks.map((chunk: any) => 
-        `From ${chunk.file_name}:\n${chunk.content}`
-      ).join('\n\n---\n\n');
-      const aiResponse = await llmService.generateResponse(inputValue, context);
+      const context = relevantChunks
+        .map((chunk: any) => `From ${chunk.file_name}:\n${chunk.content}`)
+        .join('\n\n---\n\n');
 
-      // Use the relevant chunks directly as sources, but deduplicate by file_name
-      const uniqueSources = Array.from(new Map(relevantChunks.map(chunk => [chunk.file_name, chunk])).values());
-      const sources = uniqueSources;
+      const aiResponse = await llmService.generateResponse(inputValue, context, folderMetadata);
+
+      // Deduplicate sources by file name
+      const uniqueSources = Array.from(
+        new Map(relevantChunks.map((chunk: any) => [chunk.file_name, chunk])).values()
+      );
 
       const aiMessage: ChatMessage = {
         id: (Date.now() + 1).toString(),
         content: aiResponse,
         role: 'assistant',
         timestamp: new Date().toISOString(),
-        sources,
+        sources: uniqueSources,
       };
 
       setMessages(prev => [...prev, aiMessage]);
     } catch (error) {
       console.error('RAG pipeline error:', error);
       const errorMessage = (error as Error).message || 'Unknown error';
-      const errorStack = (error as Error).stack || '';
       console.error('Error message:', errorMessage);
-      console.error('Error stack:', errorStack);
-      
+
       let responseMessage = "I encountered an error while processing your request.";
       let errorDetail = errorMessage;
-      
-      // Provide more specific error messages based on the error
+
       if (errorMessage.includes('HuggingFace')) {
         responseMessage = "There was a problem with the embedding service (HuggingFace). This could be due to an invalid API key, rate limiting, or the model is loading.";
       } else if (errorMessage.includes('Groq')) {
@@ -131,7 +141,7 @@ const ChatInterface: React.FC = () => {
       } else if (errorMessage.includes('API key')) {
         responseMessage = errorMessage;
       }
-      
+
       const errorId = (Date.now() + 1).toString();
       const errorResponse: ChatMessage = {
         id: errorId,
@@ -187,7 +197,9 @@ const ChatInterface: React.FC = () => {
           Chat about {selectedFolder.name}
         </h2>
         <p className="text-sm text-gray-600 dark:text-gray-400">
-          Ask questions about documents in this folder
+          {fileNames && fileNames.length > 0
+            ? `${fileNames.length} files indexed — ask anything about them`
+            : 'Ask questions about documents in this folder'}
         </p>
       </div>
 
@@ -210,7 +222,7 @@ const ChatInterface: React.FC = () => {
                   <Bot className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                 </div>
               )}
-              
+
               <div
                 className={`max-w-2xl rounded-lg px-4 py-3 ${
                   message.role === 'user'
@@ -219,8 +231,7 @@ const ChatInterface: React.FC = () => {
                 }`}
               >
                 <p className="text-sm whitespace-pre-wrap">{message.content}</p>
-                
-                {/* Error details toggle */}
+
                 {message.errorDetail && (
                   <div className="mt-2">
                     <button
@@ -256,7 +267,7 @@ const ChatInterface: React.FC = () => {
                   </div>
                 )}
               </div>
-              
+
               {message.role === 'user' && (
                 <div className="w-8 h-8 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center flex-shrink-0">
                   <User className="w-4 h-4 text-gray-600 dark:text-gray-400" />
@@ -265,7 +276,7 @@ const ChatInterface: React.FC = () => {
             </div>
           ))
         )}
-        
+
         {isLoading && (
           <div className="flex items-start space-x-3">
             <div className="w-8 h-8 bg-blue-100 dark:bg-blue-900/50 rounded-full flex items-center justify-center">
@@ -280,7 +291,7 @@ const ChatInterface: React.FC = () => {
             </div>
           </div>
         )}
-        
+
         <div ref={messagesEndRef} />
       </div>
 

@@ -13,14 +13,15 @@ export class LLMService {
 
   async generateResponse(
     query: string,
-    context: string
+    context: string,
+    folderMetadata?: { folderName: string; fileNames: string[] }
   ): Promise<string> {
     if (!this.apiKey) {
       throw new Error(`${this.provider === 'groq' ? 'Groq' : 'Claude'} API key is not configured. Please set ${this.provider === 'groq' ? 'VITE_GROQ_API_KEY' : 'VITE_CLAUDE_API_KEY'} in your .env file.`);
     }
 
-    const systemPrompt = this.createSystemPrompt(context);
-    
+    const systemPrompt = this.createSystemPrompt(context, folderMetadata);
+
     if (this.provider === 'groq') {
       return this.generateResponseWithGroq(systemPrompt, query);
     } else {
@@ -28,25 +29,38 @@ export class LLMService {
     }
   }
 
-  private createSystemPrompt(context: string): string {
-    return `You are a helpful AI assistant that answers questions based ONLY on the provided document context.
+  private createSystemPrompt(
+    context: string,
+    folderMetadata?: { folderName: string; fileNames: string[] }
+  ): string {
+    const metadataSection = folderMetadata
+      ? `FOLDER METADATA (always use this for questions about files, file count, or folder structure):
+Folder name: ${folderMetadata.folderName}
+Total files: ${folderMetadata.fileNames.length}
+Files in this folder:
+${folderMetadata.fileNames.map((name, i) => `  ${i + 1}. ${name}`).join('\n')}
 
-CONTEXT:
+`
+      : '';
+
+    return `You are a helpful AI assistant that answers questions based ONLY on the provided folder metadata and document context below.
+
+${metadataSection}DOCUMENT CONTENT (use this for questions about what the documents contain):
 ${context}
 
 STRICT RULES:
-1. You MUST answer ONLY using information from the provided context above
-2. If the user asks a general question about the documents (e.g., "what does this contain" or "summarize"), provide a high-level summary of the provided context.
-3. If the answer to a specific question cannot be found in the context at all, you MUST respond with: "I cannot find this information in the selected documents."
-4. Do not use any external knowledge or make assumptions beyond the context
-5. Be concise and direct in your answers
-6. If you reference information, mention which document it came from
+1. For questions about files, file names, file count, or folder structure — ALWAYS use the FOLDER METADATA section above. Never say you cannot find this.
+2. For questions about document content — use the DOCUMENT CONTENT section above.
+3. If the user asks a general question (e.g., "summarize" or "what does this contain"), provide a high-level summary.
+4. If the answer to a specific content question cannot be found in the context, respond with: "I cannot find this information in the selected documents."
+5. Do not use any external knowledge beyond the provided metadata and context.
+6. Be concise and direct in your answers.
+7. When referencing content, mention which document it came from.
 
-Now answer the user's question based on the provided context.`;
+Now answer the user's question.`;
   }
 
   private async generateResponseWithGroq(systemPrompt: string, query: string): Promise<string> {
-    // Groq API supports CORS natively
     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
