@@ -17,6 +17,122 @@ const ChatInterface: React.FC = () => {
   const [expandedErrors, setExpandedErrors] = useState<Set<string>>(new Set());
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  const normalizeForMatch = (s: string) =>
+    s
+      .toLowerCase()
+      .replace(/\.[a-z0-9]+$/i, '') // drop extension
+      .replace(/[_\-]+/g, ' ')
+      .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+  const scoreFileNameMatch = (query: string, fileName: string): number => {
+    const q = normalizeForMatch(query);
+    const f = normalizeForMatch(fileName);
+    if (!q || !f) return 0;
+
+    // strong signals: explicit inclusion
+    if (q.includes(fileName.toLowerCase())) return 100;
+    if (q.includes(f)) return 80;
+
+    const qTokens = new Set(q.split(' ').filter((t) => t.length >= 3));
+    const fTokens = f.split(' ').filter((t) => t.length >= 3);
+
+    // token overlap score
+    let overlap = 0;
+    for (const t of fTokens) {
+      if (qTokens.has(t)) overlap += 1;
+    }
+
+    // boost if query includes a distinctive token from file name
+    const boost = overlap > 0 ? 10 : 0;
+    return overlap * 10 + boost;
+  };
+
+  const resolveRequestedFileName = (query: string): string | null => {
+    const q = query.trim();
+    if (!q || fileNames.length === 0) return null;
+
+    // Match "file 8", "file #8", "file:8"
+    const fileNumMatch = q.match(/\bfile\s*[#:]*\s*(\d+)\b/i);
+    if (fileNumMatch) {
+      const idx = Number(fileNumMatch[1]);
+      if (Number.isFinite(idx) && idx >= 1 && idx <= fileNames.length) {
+        return fileNames[idx - 1];
+      }
+    }
+
+    // Match explicit filename mention (case-insensitive)
+    const lowered = q.toLowerCase();
+    const direct = fileNames.find((name) => lowered.includes(name.toLowerCase()));
+    if (direct) return direct;
+
+    // Topic-based filename matching (e.g. "dividends" -> 08_Dividends_and_Income_Investing.md)
+    const scored = fileNames
+      .map((name) => ({ name, score: scoreFileNameMatch(q, name) }))
+      .sort((a, b) => b.score - a.score);
+
+    const best = scored[0];
+    const second = scored[1];
+
+    // Only lock to a file when it’s a clear winner
+    if (best && best.score >= 20 && (!second || best.score >= second.score + 10)) {
+      return best.name;
+    }
+
+    return null;
+  };
+
+  const isFileListQuestion = (query: string): boolean => {
+    const q = query.toLowerCase().trim();
+    if (!q) return false;
+
+    return (
+      (q.includes('file') || q.includes('files')) &&
+      (
+        q.includes('what are') ||
+        q.includes('list') ||
+        q.includes('show') ||
+        q.includes('in this folder') ||
+        q.includes('folder')
+      )
+    );
+  };
+
+  const isIrrelevantQuestion = (query: string): boolean => {
+    const q = query.toLowerCase().trim();
+    if (!q) return false;
+
+    // If the user is asking about folder/files/docs, it's not irrelevant.
+    const docIntent =
+      q.includes('document') ||
+      q.includes('documents') ||
+      q.includes('folder') ||
+      q.includes('file') ||
+      q.includes('files') ||
+      q.includes('summar') ||
+      q.includes('explain') ||
+      q.includes('contains') ||
+      q.includes('content');
+    if (docIntent) return false;
+
+    // Personal / world-knowledge / unrelated patterns
+    const patterns: RegExp[] = [
+      /\bwhat('?s| is)\s+my\s+name\b/i,
+      /\bwhat('?s| is)\s+my\s+age\b/i,
+      /\bwho\s+am\s+i\b/i,
+      /\bmy\s+(name|age)\b/i,
+      /\bweather\b/i,
+      /\btemperature\b/i,
+      /\brain\b/i,
+      /\bnews\b/i,
+      /\bwho\s+is\b/i,
+      /\bwhat\s+is\s+the\s+capital\b/i,
+    ];
+
+    return patterns.some((re) => re.test(query));
+  };
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
@@ -61,6 +177,18 @@ const ChatInterface: React.FC = () => {
     try {
       console.log('Starting RAG pipeline for query:', inputValue);
 
+      if (isIrrelevantQuestion(inputValue)) {
+        const aiMessage: ChatMessage = {
+          id: (Date.now() + 1).toString(),
+          content: "Not related to the selected documents. Ask a question about the files in this folder.",
+          role: 'assistant',
+          timestamp: new Date().toISOString(),
+          sources: [],
+        };
+        setMessages(prev => [...prev, aiMessage]);
+        return;
+      }
+
       // Initialize services
       const supabaseService = new SupabaseService();
       const embeddingService = new EmbeddingService();
@@ -72,24 +200,34 @@ const ChatInterface: React.FC = () => {
         fileNames,
       };
 
-      // Step 1: Generate embedding for user query
-      console.log('Step 1: Generating embedding for query...');
-      const queryEmbedding = await embeddingService.generateEmbedding(inputValue);
-      console.log('Embedding generated, dimension:', queryEmbedding.length);
+      const metadataOnlyFileListQuestion = isFileListQuestion(inputValue);
+      const requestedFileName = metadataOnlyFileListQuestion ? null : resolveRequestedFileName(inputValue);
+      let relevantChunks: any[] = [];
 
-      // Step 2: Search for relevant document chunks in Supabase
-      console.log('Step 2: Searching documents in folder:', selectedFolder.id);
-      const relevantChunks = await supabaseService.searchDocuments(
-        queryEmbedding,
-        selectedFolder.id,
-        5
-      );
+      if (metadataOnlyFileListQuestion) {
+        console.log('Detected file-list question. Using folder metadata only.');
+      } else if (requestedFileName) {
+        console.log('Detected file-specific question. Restricting to file:', requestedFileName);
+        relevantChunks = await supabaseService.getChunksForFile(selectedFolder.id, requestedFileName, 30);
+      } else {
+        // Step 1: Generate embedding for user query
+        console.log('Step 1: Generating embedding for query...');
+        const queryEmbedding = await embeddingService.generateEmbedding(inputValue);
+        console.log('Embedding generated, dimension:', queryEmbedding.length);
+
+        // Step 2: Search for relevant document chunks in Supabase
+        console.log('Step 2: Searching documents in folder:', selectedFolder.id);
+        relevantChunks = await supabaseService.searchDocuments(queryEmbedding, selectedFolder.id, 5);
+      }
+
       console.log('Found relevant chunks:', relevantChunks.length);
 
-      if (relevantChunks.length === 0) {
+      if (!metadataOnlyFileListQuestion && relevantChunks.length === 0) {
         const aiMessage: ChatMessage = {
           id: (Date.now() + 1).toString(),
-          content: "I cannot find any processed documents in this folder. The documents may still be processing — please wait a moment and try again. If this persists, try re-selecting the folder from the sidebar to trigger document indexing.",
+          content: requestedFileName
+            ? `I cannot find any processed chunks for "${requestedFileName}" in this folder yet. It may still be indexing — wait a moment and try again. If it persists, re-select the folder to trigger indexing.`
+            : "I cannot find any processed documents in this folder. The documents may still be processing — please wait a moment and try again. If this persists, try re-selecting the folder from the sidebar to trigger document indexing.",
           role: 'assistant',
           timestamp: new Date().toISOString(),
         };
@@ -106,10 +244,9 @@ const ChatInterface: React.FC = () => {
 
       const aiResponse = await llmService.generateResponse(inputValue, context, folderMetadata);
 
-      // Deduplicate sources by file name
-      const uniqueSources = Array.from(
-        new Map(relevantChunks.map((chunk: any) => [chunk.file_name, chunk])).values()
-      );
+      const uniqueSources = metadataOnlyFileListQuestion
+        ? fileNames.map((name) => ({ file_name: name }))
+        : Array.from(new Map(relevantChunks.map((chunk: any) => [chunk.file_name, chunk])).values());
 
       const aiMessage: ChatMessage = {
         id: (Date.now() + 1).toString(),

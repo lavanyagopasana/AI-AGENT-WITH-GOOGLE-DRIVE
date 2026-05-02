@@ -60,6 +60,22 @@ export class SupabaseService {
     return data || [];
   }
 
+  async getChunksForFile(folderId: string, fileName: string, limit: number = 25): Promise<DocumentChunk[]> {
+    const { data, error } = await supabase
+      .from('document_chunks')
+      .select('*')
+      .eq('folder_id', folderId)
+      .eq('file_name', fileName)
+      .order('created_at', { ascending: true })
+      .limit(limit);
+
+    if (error) {
+      throw new Error(`Failed to get chunks for file: ${error.message}`);
+    }
+
+    return data || [];
+  }
+
   async deleteDocumentChunks(folderId: string): Promise<void> {
     const { error } = await supabase
       .from('document_chunks')
