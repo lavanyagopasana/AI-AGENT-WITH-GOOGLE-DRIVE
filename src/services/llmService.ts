@@ -36,10 +36,11 @@ ${context}
 
 STRICT RULES:
 1. You MUST answer ONLY using information from the provided context above
-2. If the answer cannot be found in the context, you MUST respond with: "I cannot find this information in the selected documents."
-3. Do not use any external knowledge or make assumptions beyond the context
-4. Be concise and direct in your answers
-5. If you reference information, mention which document it came from
+2. If the user asks a general question about the documents (e.g., "what does this contain" or "summarize"), provide a high-level summary of the provided context.
+3. If the answer to a specific question cannot be found in the context at all, you MUST respond with: "I cannot find this information in the selected documents."
+4. Do not use any external knowledge or make assumptions beyond the context
+5. Be concise and direct in your answers
+6. If you reference information, mention which document it came from
 
 Now answer the user's question based on the provided context.`;
   }
